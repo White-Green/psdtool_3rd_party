@@ -15,4 +15,3 @@ clap = "2.33.3"
 anyhow = "1.0.43"
 once_cell = "1.8.0"
 image = "0.23.14"
-ya_psd = { git = "https://github.com/White-Green/ya_psd_rs", rev = "32fe8ce176c427050a62e34fe2a4e77aca59ddd9" }

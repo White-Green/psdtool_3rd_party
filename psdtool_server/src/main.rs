@@ -10,7 +10,7 @@ use image::ColorType;
 use image::png::PngEncoder;
 use once_cell::sync::{OnceCell};
 use serde_derive::Deserialize;
-
+use psdtool_lib::ya_psd;
 use psdtool_lib::{PsdTool, PsdToolController};
 
 #[derive(Deserialize)]

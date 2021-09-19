@@ -1,6 +1,6 @@
 use std::array;
 use std::cmp::Reverse;
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::convert::{TryFrom, TryInto};
 use std::error::Error;
 use std::fmt::{Display, Formatter};
@@ -13,6 +13,8 @@ use ya_psd::layer_info::{LayerRecordFlags, LayerTreeNode};
 use ya_psd::Psd;
 
 use crate::pfv::{Pfv, PfvParseError};
+
+pub use ya_psd;
 
 mod pfv;
 
@@ -147,27 +149,26 @@ impl<'a> PsdToolController<'a> {
                     LayerTreeNode::Node { folder, .. } => folder.flags(),
                 }
             }
-            bitflags::bitflags! {
-                struct FlipFlags: u8 {
-                    const FLIP_X = 0b001;
-                    const FLIP_Y = 0b010;
-                    const FLIP_XY = 0b100;
-                }
+            #[derive(Debug, Eq, PartialEq, Hash)]
+            enum FlipFlags {
+                X,
+                Y,
+                Xy,
             }
-            fn flip_index(mut name: &str) -> (String, FlipFlags) {
-                let mut result = FlipFlags::empty();
+            fn flip_index(mut name: &str) -> (String, HashSet<FlipFlags>) {
+                let mut result = HashSet::new();
                 loop {
                     if let Some(stripped) = name.strip_suffix(":flipx") {
                         name = stripped;
-                        result |= FlipFlags::FLIP_X;
+                        result.insert(FlipFlags::X);
                         continue;
                     } else if let Some(stripped) = name.strip_suffix(":flipy") {
                         name = stripped;
-                        result |= FlipFlags::FLIP_Y;
+                        result.insert(FlipFlags::Y);
                         continue;
                     } else if let Some(stripped) = name.strip_suffix(":flipxy") {
                         name = stripped;
-                        result |= FlipFlags::FLIP_XY;
+                        result.insert(FlipFlags::Xy);
                         continue;
                     }
                     break (name.to_string(), result);
@@ -191,13 +192,13 @@ impl<'a> PsdToolController<'a> {
                 if flip_flags.is_empty() {
                     flip.default.replace(node);
                 } else {
-                    if flip_flags.contains(FlipFlags::FLIP_X) {
+                    if flip_flags.contains(&FlipFlags::X) {
                         flip.flip_x.replace(node.clone());
                     }
-                    if flip_flags.contains(FlipFlags::FLIP_Y) {
+                    if flip_flags.contains(&FlipFlags::Y) {
                         flip.flip_y.replace(node.clone());
                     }
-                    if flip_flags.contains(FlipFlags::FLIP_XY) {
+                    if flip_flags.contains(&FlipFlags::Xy) {
                         flip.flip_xy.replace(node);
                     }
                 }
