@@ -1,0 +1,2 @@
+[workspace]
+members = ["psdtool_lib", "psdtool_server"]
