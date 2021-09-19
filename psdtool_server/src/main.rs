@@ -1,14 +1,14 @@
 use std::collections::HashMap;
 
-use actix_web::{App, get, HttpResponse, HttpServer, post, Responder, web};
+use actix_web::{App, get, HttpServer, post, Responder, web};
 use actix_web::dev::HttpResponseBuilder;
-use actix_web::http::header::ContentType;
+
 use actix_web::http::StatusCode;
 use actix_web::web::Json;
 use clap::{Arg, crate_authors, crate_description, crate_name, crate_version};
 use image::ColorType;
 use image::png::PngEncoder;
-use once_cell::sync::{Lazy, OnceCell};
+use once_cell::sync::{OnceCell};
 use serde_derive::Deserialize;
 
 use psdtool_lib::{PsdTool, PsdToolController};
@@ -38,23 +38,23 @@ async fn character_image_post(web::Path(name): web::Path<String>, web::Json(sett
     generate_character_image(&name, settings).await
 }
 
-async fn generate_character_image(name: &String, settings: Vec<CharacterImageSetting>) -> impl Responder {
+async fn generate_character_image(name: &str, settings: Vec<CharacterImageSetting>) -> impl Responder {
     let psd = CHARACTER_PSD_DATA.get().unwrap().get(name)?;
     let mut psd = psd.clone_ref();
     for setting in settings {
         match setting {
             CharacterImageSetting::Favorite { path } => {
-                psd.apply_favorite(&path).map_or(None, Some)?;
+                psd.apply_favorite(&path).ok()?;
             }
             CharacterImageSetting::Layer { path } => {
-                psd.switch_layer_by_string_path(&path).map_or(None, Some)?;
+                psd.switch_layer_by_string_path(&path).ok()?;
             }
         }
     }
     let image = psd.draw();
     let mut result = Vec::new();
     let encoder = PngEncoder::new(&mut result);
-    encoder.encode(image.as_raw(), image.width(), image.height(), ColorType::Rgba8).map_or(None, Some)?;
+    encoder.encode(image.as_raw(), image.width(), image.height(), ColorType::Rgba8).ok()?;
     Some(HttpResponseBuilder::new(StatusCode::OK)
         .content_type("image/png")
         .body(result))
