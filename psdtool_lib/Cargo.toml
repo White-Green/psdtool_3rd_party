@@ -14,4 +14,4 @@ raster = "0.2.0"
 encoding_rs = "0.8.28"
 rand = "0.8.4"
 image = "0.23.14"
-ya_psd = { git = "https://github.com/White-Green/ya_psd_rs", rev = "32fe8ce176c427050a62e34fe2a4e77aca59ddd9" }
+ya_psd = { git = "https://github.com/White-Green/ya_psd_rs", rev = "522738f4f135de88f0fdb4d4acc7f26f80800c24" }
