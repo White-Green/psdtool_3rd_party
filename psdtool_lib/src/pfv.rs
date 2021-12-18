@@ -95,10 +95,11 @@ impl Pfv {
             }
         }
         for (fav_name, (filtered, items)) in &mut result {
-            if let Some((name, values)) = filters.range_mut::<str, _>((Bound::Unbounded, Bound::Included(fav_name.as_str()))).next_back() {
+            for (name, values) in filters.range_mut::<str, _>((Bound::Unbounded, Bound::Included(fav_name.as_str()))).rev() {
                 if fav_name.starts_with(name) {
                     *filtered = true;
                     items.retain(|item| values.range::<str, _>((Bound::Unbounded, Bound::Included(item.as_str()))).next_back().map_or(false, |filter_value| item.starts_with(filter_value)));
+                    break;
                 }
             }
         }
@@ -111,6 +112,6 @@ impl Pfv {
         names
     }
     pub(crate) fn get(&self, name: &str) -> Option<(bool, &[String])> {
-        dbg!(&self.members).get(name).map(|(filtered, items)| (*filtered, items.as_slice()))
+        self.members.get(name).map(|(filtered, items)| (*filtered, items.as_slice()))
     }
 }
