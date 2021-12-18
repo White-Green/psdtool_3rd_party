@@ -6,8 +6,8 @@ use std::error::Error;
 use std::fmt::{Display, Formatter};
 use std::io::Read;
 
-use image::{GenericImage, GenericImageView, Rgba, RgbaImage};
 use image::imageops::{flip_horizontal_in_place, flip_vertical_in_place};
+use image::{GenericImage, GenericImageView, Rgba, RgbaImage};
 use regex::{Captures, Regex};
 use ya_psd::layer_info::{LayerRecordFlags, LayerTreeNode};
 use ya_psd::Psd;
@@ -232,6 +232,8 @@ impl Error for SwitchLayerError {}
 pub trait PsdTool<'psd> {
     fn pdf(&self) -> &Psd<'psd>;
     fn clone_ref<'b>(&'b self) -> PsdToolControllerRef<'psd, 'b>;
+    fn layer_list(&self) -> Vec<Box<[LayerName]>>;
+    fn favorite_list(&self) -> Box<[String]>;
     fn apply_favorite(&mut self, path: &str) -> Result<(), SwitchLayerError>;
     fn switch_layer_by_string_path(&mut self, path: &str) -> Result<(), SwitchLayerError> {
         let path = path.split('/').map(|item| LayerName(item.to_string())).collect::<Vec<_>>();
@@ -241,6 +243,9 @@ pub trait PsdTool<'psd> {
     fn draw(&self) -> image::RgbaImage;
     fn flip_x(&mut self);
     fn flip_y(&mut self);
+    fn get_visible(&self) -> &[bool];
+    fn is_flip_x(&self) -> bool;
+    fn is_flip_y(&self) -> bool;
 }
 
 impl<'psd> PsdTool<'psd> for PsdToolController<'psd> {
@@ -257,6 +262,14 @@ impl<'psd> PsdTool<'psd> for PsdToolController<'psd> {
             flip_x: self.flip_x,
             flip_y: self.flip_y,
         }
+    }
+
+    fn layer_list(&self) -> Vec<Box<[LayerName]>> {
+        get_layer_list(&self.layer_name_tree, self.flip_x, self.flip_y)
+    }
+
+    fn favorite_list(&self) -> Box<[String]> {
+        self.pfv.get_member_names()
     }
 
     fn apply_favorite(&mut self, path: &str) -> Result<(), SwitchLayerError> {
@@ -286,6 +299,18 @@ impl<'psd> PsdTool<'psd> for PsdToolController<'psd> {
     fn flip_y(&mut self) {
         self.flip_y = !self.flip_y;
     }
+
+    fn get_visible(&self) -> &[bool] {
+        &self.visible
+    }
+
+    fn is_flip_x(&self) -> bool {
+        self.flip_x
+    }
+
+    fn is_flip_y(&self) -> bool {
+        self.flip_y
+    }
 }
 
 impl<'psd, 'a> PsdTool<'psd> for PsdToolControllerRef<'psd, 'a> {
@@ -304,6 +329,14 @@ impl<'psd, 'a> PsdTool<'psd> for PsdToolControllerRef<'psd, 'a> {
         }
     }
 
+    fn layer_list(&self) -> Vec<Box<[LayerName]>> {
+        get_layer_list(self.layer_name_tree, self.flip_x, self.flip_y)
+    }
+
+    fn favorite_list(&self) -> Box<[String]> {
+        self.pfv.get_member_names()
+    }
+
     fn apply_favorite(&mut self, path: &str) -> Result<(), SwitchLayerError> {
         let (filtered, favorite_items) = self.pfv.get(path).ok_or(SwitchLayerError::PathNotFound)?;
         if !filtered {
@@ -311,7 +344,13 @@ impl<'psd, 'a> PsdTool<'psd> for PsdToolControllerRef<'psd, 'a> {
         }
         let favorite_items = favorite_items.to_vec();
         for layer in favorite_items {
-            self.switch_layer_by_string_path(&layer)?;
+            if let Err(e) = self.switch_layer_by_string_path(&layer) {
+                match e {
+                    SwitchLayerError::PathNotFound => {
+                        eprintln!("pathNotFound:{:?}", layer);
+                    }
+                }
+            }
         }
         Ok(())
     }
@@ -331,20 +370,70 @@ impl<'psd, 'a> PsdTool<'psd> for PsdToolControllerRef<'psd, 'a> {
     fn flip_y(&mut self) {
         self.flip_y = !self.flip_y;
     }
+
+    fn get_visible(&self) -> &[bool] {
+        &self.visible
+    }
+
+    fn is_flip_x(&self) -> bool {
+        self.flip_x
+    }
+
+    fn is_flip_y(&self) -> bool {
+        self.flip_y
+    }
+}
+
+fn get_layer_list(name_tree: &HashMap<LayerName, Flip<LayerNameTreeNode>>, flip_x: bool, flip_y: bool) -> Vec<Box<[LayerName]>> {
+    let mut result = Vec::new();
+    fn get_layer_list_inner(name_tree: &HashMap<LayerName, Flip<LayerNameTreeNode>>, flip_x: bool, flip_y: bool, path: &mut Vec<LayerName>, result: &mut Vec<(Box<[LayerName]>, usize)>) {
+        for (name, flip) in name_tree {
+            path.push(name.clone());
+            match flip.get(flip_x, flip_y) {
+                Some(LayerNameTreeNode::Node { children, .. }) => {
+                    get_layer_list_inner(children, flip_x, flip_y, path, result);
+                }
+                Some(LayerNameTreeNode::Leaf { flat_index, .. }) => {
+                    result.push((path.clone().into_boxed_slice(), *flat_index));
+                }
+                _ => {}
+            }
+            path.pop().unwrap();
+        }
+    }
+    get_layer_list_inner(name_tree, flip_x, flip_y, &mut Vec::new(), &mut result);
+    result.sort_by_key(|(_, index)| *index);
+    result.into_iter().map(|(path, _)| path).collect()
 }
 
 fn clear_optional_layers(name_tree: &HashMap<LayerName, Flip<LayerNameTreeNode>>, visible: &mut [bool]) {
     for (name, Flip { default, flip_x, flip_y, flip_xy }) in name_tree {
         if !name.0.starts_with('!') && !name.0.starts_with('*') {
-            if let Some(node) = default { visible[node.flat_index()] = false; }
-            if let Some(node) = flip_x { visible[node.flat_index()] = false; }
-            if let Some(node) = flip_y { visible[node.flat_index()] = false; }
-            if let Some(node) = flip_xy { visible[node.flat_index()] = false; }
+            if let Some(node) = default {
+                visible[node.flat_index()] = false;
+            }
+            if let Some(node) = flip_x {
+                visible[node.flat_index()] = false;
+            }
+            if let Some(node) = flip_y {
+                visible[node.flat_index()] = false;
+            }
+            if let Some(node) = flip_xy {
+                visible[node.flat_index()] = false;
+            }
         }
-        if let Some(LayerNameTreeNode::Node { children, .. }) = default { clear_optional_layers(children, visible); }
-        if let Some(LayerNameTreeNode::Node { children, .. }) = flip_x { clear_optional_layers(children, visible); }
-        if let Some(LayerNameTreeNode::Node { children, .. }) = flip_y { clear_optional_layers(children, visible); }
-        if let Some(LayerNameTreeNode::Node { children, .. }) = flip_xy { clear_optional_layers(children, visible); }
+        if let Some(LayerNameTreeNode::Node { children, .. }) = default {
+            clear_optional_layers(children, visible);
+        }
+        if let Some(LayerNameTreeNode::Node { children, .. }) = flip_x {
+            clear_optional_layers(children, visible);
+        }
+        if let Some(LayerNameTreeNode::Node { children, .. }) = flip_y {
+            clear_optional_layers(children, visible);
+        }
+        if let Some(LayerNameTreeNode::Node { children, .. }) = flip_xy {
+            clear_optional_layers(children, visible);
+        }
     }
 }
 
@@ -452,6 +541,7 @@ fn draw(psd: &Psd, layer_tree: &HashMap<LayerName, Flip<LayerNameTreeNode>>, vis
 enum BlendMode {
     Normal,
     Multiply,
+    Lineardodge,
 }
 
 #[derive(Debug)]
@@ -464,6 +554,7 @@ impl TryFrom<ya_psd::layer_info::BlendMode> for BlendMode {
         match value {
             ya_psd::layer_info::BlendMode::Normal => Ok(BlendMode::Normal),
             ya_psd::layer_info::BlendMode::Multiply => Ok(BlendMode::Multiply),
+            ya_psd::layer_info::BlendMode::Lineardodge => Ok(BlendMode::Lineardodge),
             _ => Err(BlendModeConvertError(value)),
         }
     }
@@ -484,11 +575,17 @@ impl BlendMode {
                 }
                 multiply_blend
             }
+            BlendMode::Lineardodge => {
+                fn lineardodge_blend(rgb_src: f64, rgb_dest: f64) -> f64 {
+                    rgb_src + rgb_dest
+                }
+                lineardodge_blend
+            }
         }
     }
 }
 
-fn blend_image<B: GenericImage<Pixel=Rgba<u8>>, T: GenericImageView<Pixel=Rgba<u8>>>(image: &mut B, new_image: &T, blend_mode: BlendMode) {
+fn blend_image<B: GenericImage<Pixel = Rgba<u8>>, T: GenericImageView<Pixel = Rgba<u8>>>(image: &mut B, new_image: &T, blend_mode: BlendMode) {
     let raw_blend = blend_mode.get_raw_blend_function();
     for (x, y, Rgba([r1, g1, b1, a1])) in new_image.pixels() {
         let Rgba([r2, g2, b2, a2]) = image.get_pixel(x, y);

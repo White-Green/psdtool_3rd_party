@@ -1,4 +1,3 @@
-
 use std::collections::{BTreeMap, BTreeSet, HashMap};
 use std::error::Error;
 use std::fmt::{Display, Formatter};
@@ -28,7 +27,7 @@ impl Display for PfvParseError {
             PfvParseError::DuplicatedName(name) => write!(f, "name {:?} is duplicated", name),
             PfvParseError::DuplicatedFilterName(name) => write!(f, "filter name {:?} is duplicated", name),
             PfvParseError::UnknownIdentifier(ident) => write!(f, "unknown identifier {:?} after '~'", ident),
-            PfvParseError::IoError(e) => write!(f, "{}", e)
+            PfvParseError::IoError(e) => write!(f, "{}", e),
         }
     }
 }
@@ -37,7 +36,7 @@ impl Error for PfvParseError {
     fn source(&self) -> Option<&(dyn Error + 'static)> {
         match self {
             PfvParseError::IoError(e) => Some(e),
-            _ => None
+            _ => None,
         }
     }
 }
@@ -56,7 +55,7 @@ impl Pfv {
         let file = BufReader::new(file);
         let mut lines = file.lines();
         match lines.next() {
-            Some(Ok(line))if line.trim() == "[PSDToolFavorites-v1]" => {}
+            Some(Ok(line)) if line.trim() == "[PSDToolFavorites-v1]" => {}
             Some(Err(e)) => return Err(PfvParseError::IoError(e)),
             _ => return Err(PfvParseError::InvalidFormat),
         }
@@ -71,7 +70,7 @@ impl Pfv {
             for line in iter.peeking_take_while(|line| line.as_ref().map_or(false, |line| !line.trim().starts_with("//"))) {
                 match line {
                     Ok(line) => items.push(line),
-                    Err(err) => return Some(Err(err))
+                    Err(err) => return Some(Err(err)),
                 }
             }
             Some(Ok((fav_name, items)))
@@ -106,7 +105,12 @@ impl Pfv {
 
         Ok(Pfv { members: result })
     }
+    pub(crate) fn get_member_names(&self) -> Box<[String]> {
+        let mut names = self.members.keys().cloned().collect::<Box<[_]>>();
+        names.sort();
+        names
+    }
     pub(crate) fn get(&self, name: &str) -> Option<(bool, &[String])> {
-        self.members.get(name).map(|(filtered, items)| (*filtered, items.as_slice()))
+        dbg!(&self.members).get(name).map(|(filtered, items)| (*filtered, items.as_slice()))
     }
 }
