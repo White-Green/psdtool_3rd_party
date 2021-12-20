@@ -1,4 +1,5 @@
 use std::collections::HashMap;
+use std::path::PathBuf;
 use std::sync::{Arc, RwLock};
 
 use actix_web::dev::HttpResponseBuilder;
@@ -97,7 +98,11 @@ async fn character_names() -> impl Responder {
 #[get("/layers/{name}")]
 async fn character_layers(web::Path(name): web::Path<String>) -> impl Responder {
     let (psd, _) = CHARACTER_PSD_DATA.get().unwrap().get(&name)?;
-    Some(Json(psd.layer_list().into_iter().map(|name| name.into_vec().into_iter().map(|name| name.into_string()).reduce(|a, b| format!("{}/{}", a, b))).collect::<Vec<_>>()))
+    Some(Json(get_layer_list(psd)))
+}
+
+fn get_layer_list(psd: &PsdToolController) -> Vec<String> {
+    psd.layer_list().into_iter().map(|name| name.into_vec().into_iter().map(|name| name.into_string()).reduce(|a, b| format!("{}/{}", a, b)).unwrap()).collect::<Vec<_>>()
 }
 
 #[get("/favorites/{name}")]
@@ -116,7 +121,7 @@ async fn main() -> anyhow::Result<()> {
     let setting_json = setting_json_file.as_deref().unwrap_or(setting_json);
     let result = serde_json::from_str::<HashMap<String, PsdSettings>>(setting_json)?;
     let mut character_psd_data = HashMap::new();
-    for (character_name, PsdSettings { psd, pfv }) in result {
+    for (character_name, PsdSettings { psd, pfv, layers_out, favorites_out }) in result {
         let psd = std::fs::read(psd)?;
         let psd = ya_psd::parse_psd(&psd)?;
         let psd = psd.into_static();
@@ -126,6 +131,18 @@ async fn main() -> anyhow::Result<()> {
         } else {
             PsdToolController::new(psd)
         };
+        if let Some(layers_out) = layers_out {
+            if let Some(directory) = layers_out.parent() {
+                std::fs::create_dir_all(directory)?;
+            }
+            std::fs::write(layers_out, serde_json::to_string(&get_layer_list(&controller))?)?;
+        }
+        if let Some(favorites_out) = favorites_out {
+            if let Some(directory) = favorites_out.parent() {
+                std::fs::create_dir_all(directory)?;
+            }
+            std::fs::write(favorites_out, serde_json::to_string(&controller.favorite_list())?)?;
+        }
         character_psd_data.insert(character_name, (controller, Default::default()));
     }
     CHARACTER_PSD_DATA.set(character_psd_data).unwrap();
@@ -136,6 +153,8 @@ async fn main() -> anyhow::Result<()> {
 
 #[derive(Deserialize)]
 struct PsdSettings {
-    psd: String,
-    pfv: Option<String>,
+    psd: PathBuf,
+    pfv: Option<PathBuf>,
+    layers_out: Option<PathBuf>,
+    favorites_out: Option<PathBuf>,
 }
