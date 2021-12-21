@@ -1,6 +1,6 @@
 use std::collections::HashMap;
 use std::path::PathBuf;
-use std::sync::{Arc, RwLock};
+use std::sync::RwLock;
 
 use actix_web::dev::HttpResponseBuilder;
 use actix_web::{get, post, web, App, HttpServer, Responder};
@@ -111,7 +111,7 @@ async fn character_favorites(web::Path(name): web::Path<String>) -> impl Respond
     Some(Json(psd.favorite_list()))
 }
 
-static CHARACTER_PSD_DATA: OnceCell<HashMap<String, (PsdToolController<'static>, Arc<RwLock<HashMap<(Vec<bool>, bool, bool), Vec<u8>>>>)>> = OnceCell::new();
+static CHARACTER_PSD_DATA: OnceCell<HashMap<String, (PsdToolController<'static>, RwLock<HashMap<(Vec<bool>, bool, bool), Vec<u8>>>)>> = OnceCell::new();
 
 #[actix_web::main]
 async fn main() -> anyhow::Result<()> {
